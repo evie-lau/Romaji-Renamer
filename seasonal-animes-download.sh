@@ -44,8 +44,8 @@ do
 		printf "%s\t\t - Seasonal invalid TVDB ID for Anilist : %s\n" "$(date +%H:%M:%S)" "$anilist_id" | tee -a "$LOG"
 		continue
 	else
-		tvdb_season=$(jq --arg anilist_id "$anilist_id" '.[] | select( .anilist_id == $anilist_id ) | .tvdb_season' -r "$SCRIPT_FOLDER/config/tmp/list-animes-id.json")
-		tvdb_epoffset=$(jq --arg anilist_id "$anilist_id" '.[] | select( .anilist_id == $anilist_id ) | .tvdb_epoffset' -r "$SCRIPT_FOLDER/config/tmp/list-animes-id.json")
+		tvdb_season=$(awk -F '\t' -v key="$anilist_id" '$1 == key { print $3 }' "$SCRIPT_FOLDER/config/tmp/anime-mapping.tsv")
+		tvdb_epoffset=$(awk -F '\t' -v key="$anilist_id" '$1 == key { print $4 }' "$SCRIPT_FOLDER/config/tmp/anime-mapping.tsv")
 		if [[ "$tvdb_season" -eq 1 ]] && [[ "$tvdb_epoffset" -eq 0 ]]
 		then
 			printf "%s\n" "$tvdb_id" >> "$SCRIPT_FOLDER/config/data/seasonal.tsv"

@@ -12,8 +12,6 @@ OVERRIDE=override-ID-$media_type.tsv
 if [ ! -d "$SCRIPT_FOLDER/config/data" ]										#check if exist and create folder for json data
 then
 	mkdir "$SCRIPT_FOLDER/config/data"
-else
-	find "$SCRIPT_FOLDER/config/data/" -type f -mtime +"$DATA_CACHE_TIME" -exec rm {} \;					#delete json data if older than 2 days
 fi
 if [ ! -d "$SCRIPT_FOLDER/config/tmp" ]										#check if exist and create folder for json data
 then
@@ -57,9 +55,9 @@ do
 	title_override=$(printf "%s" "$line" | awk -F"\t" '{print $3}')
 	studio=$(printf "%s" "$line" | awk -F"\t" '{print $4}')
 	override_seasons_ignore=$(printf "%s" "$line" | awk -F"\t" '{print $5}')
-	if ! awk -F"\t" '{print $1}' "$SCRIPT_FOLDER/config/ID/animes.tsv" | grep -q -w "$tvdb_id"
+	if ! tsv-has-value "$SCRIPT_FOLDER/config/ID/animes.tsv" 1 "$tvdb_id"
 	then
-		if awk -F"\t" '{print $1}' "$SCRIPT_FOLDER/config/tmp/plex_animes_export.tsv" | grep -q -w "$tvdb_id"
+		if tsv-has-value "$SCRIPT_FOLDER/config/tmp/plex_animes_export.tsv" 1 "$tvdb_id"
 		then
 			if [[ "$anilist_id" == 'ignore' ]]
 			then
@@ -70,10 +68,9 @@ do
 					ignore_list=$(printf "%s,%s" "$ignore_list" "$tvdb_id")
 				fi
 			else
-				line=$(awk -F"\t" '{print $1}' "$SCRIPT_FOLDER/config/tmp/plex_animes_export.tsv" | grep -w -n "$tvdb_id" | cut -d : -f 1)
-				plex_title=$(sed -n "${line}p" "$SCRIPT_FOLDER/config/tmp/plex_animes_export.tsv" | awk -F"\t" '{print $2}')
-				asset_name=$(sed -n "${line}p" "$SCRIPT_FOLDER/config/tmp/plex_animes_export.tsv" | awk -F"\t" '{print $3}')
-				seasons_list=$(sed -n "${line}p" "$SCRIPT_FOLDER/config/tmp/plex_animes_export.tsv" | awk -F"\t" '{print $4}')
+				plex_title=$(tsv-get-field "$SCRIPT_FOLDER/config/tmp/plex_animes_export.tsv" 1 "$tvdb_id" 2)
+				asset_name=$(tsv-get-field "$SCRIPT_FOLDER/config/tmp/plex_animes_export.tsv" 1 "$tvdb_id" 3)
+				seasons_list=$(tsv-get-field "$SCRIPT_FOLDER/config/tmp/plex_animes_export.tsv" 1 "$tvdb_id" 4)
 				printf "%s\t\t - Found override for tvdb id : %s / anilist id : %s\n" "$(date +%H:%M:%S)" "$tvdb_id" "$anilist_id" | tee -a "$LOG"
 				printf "%s\t%s\t%s\t%s\t%s\t%s\n" "$tvdb_id" "$anilist_id" "$plex_title" "$asset_name" "$seasons_list" "$override_seasons_ignore" >> "$SCRIPT_FOLDER/config/ID/animes.tsv"
 			fi
@@ -82,7 +79,7 @@ do
 done < "$SCRIPT_FOLDER/config/override-ID-animes.tsv"
 while IFS=$'\t' read -r tvdb_id plex_title asset_name last_season total_seasons 		# then get the other ID from the ID mapping and download json data
 do
-	if ! awk -F"\t" '{print $1}' "$SCRIPT_FOLDER/config/ID/animes.tsv" | grep -q -w "$tvdb_id"
+	if ! tsv-has-value "$SCRIPT_FOLDER/config/ID/animes.tsv" 1 "$tvdb_id"
 	then
 		anilist_id=$(get-anilist-id)
 		if [[ "$anilist_id" == 'null' ]] || [[ "${#anilist_id}" == '0' ]]				# Ignore anime with no anilist id
@@ -158,10 +155,9 @@ done
 sort -n "$SCRIPT_FOLDER/config/tmp/ongoing-tmp.tsv" | uniq > "$SCRIPT_FOLDER/config/tmp/ongoing.tsv"
 while read -r anilist_id
 do
-	if awk -F"\t" '{print $2}' "$SCRIPT_FOLDER/config/ID/animes.tsv" | grep -q -w "$anilist_id"
+	if tsv-has-value "$SCRIPT_FOLDER/config/ID/animes.tsv" 2 "$anilist_id"
 	then
-		line=$(awk -F"\t" '{print $2}' "$SCRIPT_FOLDER/config/ID/animes.tsv" | grep -w -n "$anilist_id" | cut -d : -f 1)
-		tvdb_id=$(sed -n "${line}p" "$SCRIPT_FOLDER/config/ID/animes.tsv" | awk -F"\t" '{print $1}')
+		tvdb_id=$(tsv-get-field "$SCRIPT_FOLDER/config/ID/animes.tsv" 2 "$anilist_id" 1)
 		printf "%s\n" "$tvdb_id" >> "$SCRIPT_FOLDER/config/data/ongoing.tsv"
 	else
 		tvdb_id=$(get-tvdb-id)																	# convert the mal id to tvdb id (to get the main anime)

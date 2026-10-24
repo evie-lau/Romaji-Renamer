@@ -12,8 +12,6 @@ OVERRIDE=override-ID-$media_type.tsv
 if [ ! -d "$SCRIPT_FOLDER/config/data" ]														#check if exist and create folder for json data
 then
 	mkdir "$SCRIPT_FOLDER/config/data"
-else
-	find "$SCRIPT_FOLDER/config/data/" -type f -mtime +"$DATA_CACHE_TIME" -exec rm {} \;		#delete json data if older than 2 days
 fi
 if [ ! -d "$SCRIPT_FOLDER/config/tmp" ]														#check if exist and create folder for json data
 then
@@ -52,9 +50,9 @@ printf "%s\t - Sorting Plex animes library\n" "$(date +%H:%M:%S)" | tee -a "$LOG
 ignore_list=""
 while IFS=$'\t' read -r imdb_id anilist_id title_override studio notes
 do
-	if ! awk -F"\t" '{print $1}' "$SCRIPT_FOLDER/config/ID/movies.tsv" | grep -q -w "$imdb_id"
+	if ! tsv-has-value "$SCRIPT_FOLDER/config/ID/movies.tsv" 1 "$imdb_id"
 	then
-		if awk -F"\t" '{print $1}' "$SCRIPT_FOLDER/config/tmp/plex_movies_export.tsv" | grep -q -w "$imdb_id"
+		if tsv-has-value "$SCRIPT_FOLDER/config/tmp/plex_movies_export.tsv" 1 "$imdb_id"
 		then
 			if [[ "$anilist_id" == 'ignore' ]]
 			then
@@ -65,9 +63,8 @@ do
 					ignore_list=$(printf "%s,%s" "$ignore_list" "$imdb_id")
 				fi
 			else
-				line=$(awk -F"\t" '{print $1}' "$SCRIPT_FOLDER/config/tmp/plex_movies_export.tsv" | grep -w -n "$imdb_id" | cut -d : -f 1)
-				plex_title=$(sed -n "${line}p" "$SCRIPT_FOLDER/config/tmp/plex_movies_export.tsv" | awk -F"\t" '{print $2}')
-				asset_name=$(sed -n "${line}p" "$SCRIPT_FOLDER/config/tmp/plex_movies_export.tsv" | awk -F"\t" '{print $3}')
+				plex_title=$(tsv-get-field "$SCRIPT_FOLDER/config/tmp/plex_movies_export.tsv" 1 "$imdb_id" 2)
+				asset_name=$(tsv-get-field "$SCRIPT_FOLDER/config/tmp/plex_movies_export.tsv" 1 "$imdb_id" 3)
 				printf "%s\t\t - Found override for imdb id : %s / anilist id : %s\n" "$(date +%H:%M:%S)" "$imdb_id" "$anilist_id" | tee -a "$LOG"
 				printf "%s\t%s\t%s\t%s\t%s\n" "$imdb_id" "$mal_id" "$anilist_id" "$plex_title" "$asset_name" >> "$SCRIPT_FOLDER/config/ID/movies.tsv"
 			fi
@@ -76,7 +73,7 @@ do
 done < "$SCRIPT_FOLDER/config/override-ID-movies.tsv"
 while IFS=$'\t' read -r imdb_id plex_title asset_name													# then get the other ID from the ID mapping and download json data
 do
-	if ! awk -F"\t" '{print $1}' "$SCRIPT_FOLDER/config/ID/movies.tsv" | grep -q -w "$imdb_id"
+	if ! tsv-has-value "$SCRIPT_FOLDER/config/ID/movies.tsv" 1 "$imdb_id"
 	then
 		anilist_id=$(get-anilist-id)
 		if [[ "$anilist_id" == 'null' ]] || [[ "${#anilist_id}" == '0' ]]				# Ignore anime with no anilist id

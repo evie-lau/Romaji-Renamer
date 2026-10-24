@@ -198,6 +198,12 @@ ANILIST_USERNAME=Arialz
 ANILIST_LISTS_LEVEL=show
 # Mal Data cache time (in days min : 1)
 DATA_CACHE_TIME=5
+# Cache finished/cancelled series data for this many days
+CACHE_TIME_FINISHED=90
+# Cache releasing/hiatus series data for this many days
+CACHE_TIME_AIRING=1
+# Cache not-yet-released series data for this many days
+CACHE_TIME_UPCOMING=3
 ```
 
 ### Step 4 - Configure Kometa 

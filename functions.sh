@@ -11,49 +11,149 @@ function create-override () {
 		cp "$SCRIPT_FOLDER/config/override-ID-${media_type}.example.tsv" "$SCRIPT_FOLDER/config/$OVERRIDE"
 	fi
 }
+function cache-is-fresh () {
+	local file=$1
+	local max_days=$2
+	local modified
+	local now
+
+	[[ -s "$file" ]] || return 1
+	[[ "$max_days" =~ ^[0-9]+$ ]] || return 1
+	modified=$(stat -c %Y -- "$file") || return 1
+	now=$(date +%s) || return 1
+	(( now - modified < max_days * 86400 ))
+}
+function cache-time-for-status () {
+	local cache_ttl
+
+	case "$1" in
+		FINISHED|CANCELLED)
+			cache_ttl=${CACHE_TIME_FINISHED:-${DATA_CACHE_TIME:-5}}
+			;;
+		RELEASING|HIATUS)
+			cache_ttl=${CACHE_TIME_AIRING:-${DATA_CACHE_TIME:-5}}
+			;;
+		NOT_YET_RELEASED)
+			cache_ttl=${CACHE_TIME_UPCOMING:-${DATA_CACHE_TIME:-5}}
+			;;
+		*)
+			cache_ttl=${DATA_CACHE_TIME:-5}
+			;;
+	esac
+	if [[ ! "$cache_ttl" =~ ^[0-9]+$ ]]
+	then
+		printf "Error invalid cache TTL: %s\n" "$cache_ttl" >&2
+		return 1
+	fi
+	printf "%s" "$cache_ttl"
+}
+function download-static-json () {
+	local filename=$1
+	local url=$2
+	local file="$SCRIPT_FOLDER/config/data/$filename"
+	local etag_file="$file.etag"
+	local new_file="$file.tmp"
+	local new_etag="$etag_file.tmp"
+	local cache_valid=0
+	local status
+	local size
+	local wait_time=0
+	local -a curl_args
+
+	if [[ -s "$file" ]] && [[ $(du -b "$file" | awk '{ print $1 }') -gt 1000 ]] && jq -e . "$file" >/dev/null 2>&1
+	then
+		cache_valid=1
+	fi
+	while [[ $wait_time -lt 5 ]]
+	do
+		curl_args=(curl -sS --output "$new_file" --write-out "%{http_code}" --etag-save "$new_etag")
+		if [[ $cache_valid == 1 ]] && [[ -s "$etag_file" ]]
+		then
+			curl_args+=(--etag-compare "$etag_file")
+		fi
+		status=$("${curl_args[@]}" "$url")
+		if [[ $? == 0 ]]
+		then
+			if [[ "$status" == "304" ]] && [[ $cache_valid == 1 ]]
+			then
+				rm -f "$new_file" "$new_etag"
+				printf "%s - Using cached %s\n" "$(date +%H:%M:%S)" "$filename" | tee -a "$LOG"
+				return 0
+			fi
+			size=$(du -b "$new_file" 2>/dev/null | awk '{ print $1 }')
+			if [[ "$status" == "200" ]] && [[ "$size" =~ ^[0-9]+$ ]] && [[ "$size" -gt 1000 ]] && jq -e . "$new_file" >/dev/null 2>&1
+			then
+				if ! mv "$new_file" "$file"
+				then
+					printf "%s - Error saving downloaded %s\n" "$(date +%H:%M:%S)" "$filename" | tee -a "$LOG"
+					return 1
+				fi
+				if [[ -s "$new_etag" ]]
+				then
+					mv "$new_etag" "$etag_file"
+				else
+					rm -f "$etag_file"
+				fi
+				printf "%s - Downloaded %s\n" "$(date +%H:%M:%S)" "$filename" | tee -a "$LOG"
+				return 0
+			fi
+		fi
+		rm -f "$new_file" "$new_etag"
+		((wait_time++))
+		if [[ $wait_time == 4 ]]
+		then
+			printf "%s - Error can't download %s stopping script\n" "$(date +%H:%M:%S)" "$filename" | tee -a "$LOG"
+			return 1
+		fi
+		printf "%s - Invalid or failed response for %s, retrying\n" "$(date +%H:%M:%S)" "$filename" | tee -a "$LOG"
+		sleep 30
+	done
+	return 1
+}
+function create-mapping-indexes () {
+	local mapping_file
+	local raw_file
+
+	if [[ $media_type == "animes" ]]
+	then
+		mapping_file="$SCRIPT_FOLDER/config/data/list-animes-id.json"
+		raw_file="$SCRIPT_FOLDER/config/tmp/anime-mapping.tsv"
+		jq -r '.[] | [(.anilist_id // ""), (.tvdb_id // ""), (.tvdb_season // ""), (.tvdb_epoffset // ""), (.mal_id // "")] | @tsv' "$mapping_file" > "$raw_file"
+		awk -F '\t' '($3 == "1" || $3 == "-1") && $4 == "0" && !seen[$2]++ { print $2 "\t" $1 }' "$raw_file" > "$SCRIPT_FOLDER/config/tmp/tvdb-anilist.tsv"
+		awk -F '\t' '!seen[$1]++ { print $1 "\t" $5 }' "$raw_file" > "$SCRIPT_FOLDER/config/tmp/anilist-mal.tsv"
+		awk -F '\t' '{ print $1 "\t" $2 }' "$raw_file" > "$SCRIPT_FOLDER/config/tmp/anilist-tvdb.tsv"
+	else
+		mapping_file="$SCRIPT_FOLDER/config/data/list-movies-id.json"
+		raw_file="$SCRIPT_FOLDER/config/tmp/movie-mapping.tsv"
+		jq -r '.[] | [(.anilist_id // ""), (.imdb_id // ""), (.mal_id // "")] | @tsv' "$mapping_file" > "$raw_file"
+		awk -F '\t' '!seen[$2]++ { print $2 "\t" $1 }' "$raw_file" > "$SCRIPT_FOLDER/config/tmp/imdb-anilist.tsv"
+		awk -F '\t' '!seen[$1]++ { print $1 "\t" $3 }' "$raw_file" > "$SCRIPT_FOLDER/config/tmp/anilist-mal.tsv"
+	fi
+}
+function tsv-has-value () {
+	local file=$1
+	local field=$2
+	local value=$3
+
+	awk -F '\t' -v key="$value" -v column="$field" '$column == key { found = 1; exit } END { if (!found) exit 1 }' "$file"
+}
+function tsv-get-field () {
+	local file=$1
+	local key_field=$2
+	local key=$3
+	local output_field=$4
+
+	awk -F '\t' -v key="$key" -v key_column="$key_field" -v value_column="$output_field" '$key_column == key { print $value_column; exit }' "$file"
+}
 function download-anime-id-mapping () {
-	wait_time=0
-	while [ $wait_time -lt 5 ];
-	do
-		printf "%s - Downloading animes mapping\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
-		if [[ $media_type == "animes" ]]
-		then
-			curl -s "https://raw.githubusercontent.com/Arial-Z/Animes-ID/main/list-animes-id.json" > "$SCRIPT_FOLDER/config/tmp/list-animes-id.json"
-			size=$(du -b "$SCRIPT_FOLDER/config/tmp/list-animes-id.json" | awk '{ print $1 }')
-		else
-			curl -s "https://raw.githubusercontent.com/Arial-Z/Animes-ID/main/list-movies-id.json" > "$SCRIPT_FOLDER/config/tmp/list-movies-id.json"
-			size=$(du -b "$SCRIPT_FOLDER/config/tmp/list-movies-id.json" | awk '{ print $1 }')
-		fi
-		((wait_time++))
-		if [[ $wait_time == 4 ]]
-		then
-			printf "%s - Error can't download animes mapping file stopping script\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
-			exit 1
-		elif [[ $size -gt 1000 ]]
-		then
-			printf "%s - Done\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
-			break
-		fi
-		sleep 30
-	done
-	wait_time=0
-	while [ $wait_time -lt 5 ];
-	do
-		printf "%s - Downloading animes awards data\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
-		curl -s "https://raw.githubusercontent.com/Arial-Z/Animes-ID/main/cr-award/cr-award.json" > "$SCRIPT_FOLDER/config/tmp/cr-award.json"
-		size=$(du -b "$SCRIPT_FOLDER/config/tmp/cr-award.json" | awk '{ print $1 }')
-		((wait_time++))
-		if [[ $wait_time == 4 ]]
-		then
-			printf "%s - Error can't download animes awards file stopping script\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
-			exit 1
-		elif [[ $size -gt 1000 ]]
-		then
-			printf "%s - Done\n\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
-			break
-		fi
-		sleep 30
-	done
+	if [[ $media_type == "animes" ]]
+	then
+		download-static-json "list-animes-id.json" "https://raw.githubusercontent.com/Arial-Z/Animes-ID/main/list-animes-id.json" || exit 1
+	else
+		download-static-json "list-movies-id.json" "https://raw.githubusercontent.com/Arial-Z/Animes-ID/main/list-movies-id.json" || exit 1
+	fi
+	download-static-json "cr-award.json" "https://raw.githubusercontent.com/Arial-Z/Animes-ID/main/cr-award/cr-award.json" || exit 1
+	create-mapping-indexes
 }
 function get-anilist-userlist {
 	if [[ $ANILIST_LISTS == "Yes" ]]
@@ -112,28 +212,35 @@ function get-anilist-userlist {
 function get-anilist-id () {
 	if [[ $media_type == "animes" ]]
 	then
-		jq --arg tvdb_id "$tvdb_id" '.[] | select( .tvdb_id == $tvdb_id ) | select( .tvdb_season == "1" or .tvdb_season == "-1" ) | select( .tvdb_epoffset == "0" ) | .anilist_id' -r "$SCRIPT_FOLDER/config/tmp/list-animes-id.json" | head -n 1
+		awk -F '\t' -v key="$tvdb_id" '$1 == key { print $2; exit }' "$SCRIPT_FOLDER/config/tmp/tvdb-anilist.tsv"
 	else
-		jq --arg imdb_id "$imdb_id" '.[] | select( .imdb_id == $imdb_id ) | .anilist_id' -r "$SCRIPT_FOLDER/config/tmp/list-movies-id.json" | head -n 1
+		awk -F '\t' -v key="$imdb_id" '$1 == key { print $2; exit }' "$SCRIPT_FOLDER/config/tmp/imdb-anilist.tsv"
 	fi
 }
 function get-mal-id () {
 	mal_id=$(jq '.data.Media.idMal' -r "$SCRIPT_FOLDER/config/data/anilist-$anilist_id.json")
 	if [[ $mal_id == 'null' ]] || [[ -z $mal_id ]]
 	then
-		if [[ $media_type == "animes" ]]
-		then
-			mal_id=$(jq --arg anilist_id "$anilist_id" '.[] | select( .anilist_id == $anilist_id ) | .mal_id' -r "$SCRIPT_FOLDER/config/tmp/list-animes-id.json" | head -n 1)
-		else
-			mal_id=$(jq --arg anilist_id "$anilist_id" '.[] | select( .anilist_id == $anilist_id ) | .mal_id' -r "$SCRIPT_FOLDER/config/tmp/list-movies-id.json" | head -n 1)
-		fi
+		mal_id=$(awk -F '\t' -v key="$anilist_id" '$1 == key { print $2; exit }' "$SCRIPT_FOLDER/config/tmp/anilist-mal.tsv")
 	fi
 }
 function get-tvdb-id () {
-	jq --arg anilist_id "$anilist_id" '.[] | select( .anilist_id == $anilist_id ) | .tvdb_id' -r "$SCRIPT_FOLDER/config/tmp/list-animes-id.json"
+	awk -F '\t' -v key="$anilist_id" '$1 == key { print $2 }' "$SCRIPT_FOLDER/config/tmp/anilist-tvdb.tsv"
 }
 function get-anilist-infos () {
-	if [ ! -f "$SCRIPT_FOLDER/config/data/anilist-$anilist_id.json" ]
+	local cache_file="$SCRIPT_FOLDER/config/data/anilist-$anilist_id.json"
+	local tmp_file="$cache_file.tmp"
+	local cache_status
+	local cache_ttl
+
+	cache_status=$(jq -er '.data.Media | select(type == "object") | .status | strings | select(length > 0)' "$cache_file" 2>/dev/null)
+	cache_ttl=$(cache-time-for-status "$cache_status") || exit 1
+	if [[ -n "$cache_status" ]] && cache-is-fresh "$cache_file" "$cache_ttl"
+	then
+		return 0
+	fi
+
+	if [[ -z "$cache_status" ]] || ! cache-is-fresh "$cache_file" "$cache_ttl"
 	then
 		wait_time=0
 		anilist_api_retry=0
@@ -151,16 +258,41 @@ function get-anilist-infos () {
 			else
 				printf "%s\t\t - Downloading data for anilist : %s\n" "$(date +%H:%M:%S)" "$anilist_id" | tee -a "$LOG"
 			fi
-			curl -s 'https://graphql.anilist.co/' \
+			if curl -sS 'https://graphql.anilist.co/' \
 			-X POST \
 			-H 'content-type: application/json' \
-			--data '{ "query": "{ Media(type: ANIME, id: '"$anilist_id"') { relations { edges { relationType node { id type format title { romaji } status } } } title { romaji(stylised: false) english(stylised: false) native(stylised: false) } averageScore genres tags { name rank } studios { edges { node { name isAnimationStudio } } } startDate { year month } season seasonYear coverImage { extraLarge } status idMal} }" }' > "$SCRIPT_FOLDER/config/data/anilist-$anilist_id.json" -D "$SCRIPT_FOLDER/config/tmp/anilist-limit-rate.txt"
-			if grep -q -w '"data": null' "$SCRIPT_FOLDER/config/data/anilist-$anilist_id.json"
+			--data '{ "query": "{ Media(type: ANIME, id: '"$anilist_id"') { relations { edges { relationType node { id type format title { romaji } status } } } title { romaji(stylised: false) english(stylised: false) native(stylised: false) } averageScore genres tags { name rank } studios { edges { node { name isAnimationStudio } } } startDate { year month } season seasonYear coverImage { extraLarge } status idMal} }" }' > "$tmp_file" -D "$SCRIPT_FOLDER/config/tmp/anilist-limit-rate.txt"
 			then
+				if jq -e '.data.Media | type == "object" and (.status | type == "string")' "$tmp_file" >/dev/null 2>&1
+				then
+					if ! mv "$tmp_file" "$cache_file"
+					then
+						printf "%s - Error saving AniList data for %s\n" "$(date +%H:%M:%S)" "$anilist_id" | tee -a "$LOG"
+						exit 1
+					fi
+				else
+					((anilist_api_retry++))
+					rm -f "$tmp_file"
+					printf "%s - Invalid json from AniList API down, waiting 60s\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
+					sleep 61
+					if [[ $anilist_api_retry == 4 ]]
+					then
+						printf "%s - Error can't download anilist data stopping script\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
+						exit 1
+					fi
+					continue
+				fi
+			else
 				((anilist_api_retry++))
-				rm "$SCRIPT_FOLDER/config/data/anilist-$anilist_id.json"
-				printf "%s - Invalid json from AniList API down, waiting 60s\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
+				rm -f "$tmp_file"
+				printf "%s - AniList request failed, waiting 60s\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
 				sleep 61
+				if [[ $anilist_api_retry == 4 ]]
+				then
+					printf "%s - Error can't download anilist data stopping script\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
+					exit 1
+				fi
+				continue
 			fi
 			rate_limit=0
 			rate_limit=$(grep -oP '(?<=x-ratelimit-remaining: )[0-9]+' "$SCRIPT_FOLDER/config/tmp/anilist-limit-rate.txt")
@@ -206,7 +338,24 @@ function get-mal-infos () {
 		printf "%s\t\t - Missing MAL ID for Anilist : %s / %s\n" "$(date +%H:%M:%S)" "$anilist_id" "$plex_title" | tee -a "$LOG"
 		printf "%s - Missing MAL ID for Anilist : %s / %s\n" "$(date +%H:%M:%S)" "$anilist_id" "$plex_title" >> "$MATCH_LOG"
 	else
-		if [ ! -f "$SCRIPT_FOLDER/config/data/MAL-$mal_id.json" ]
+		local cache_file="$SCRIPT_FOLDER/config/data/MAL-$mal_id.json"
+		local tmp_file="$cache_file.tmp"
+		local cache_status
+		local cache_ttl
+		local cached_valid=0
+		local status
+
+		cache_status=$(jq -er '.data.Media | select(type == "object") | .status | strings | select(length > 0)' "$SCRIPT_FOLDER/config/data/anilist-$anilist_id.json" 2>/dev/null)
+		cache_ttl=$(cache-time-for-status "$cache_status") || exit 1
+		if [[ -s "$cache_file" ]] && jq -e '.data | type == "object"' "$cache_file" >/dev/null 2>&1
+		then
+			cached_valid=1
+			if cache-is-fresh "$cache_file" "$cache_ttl"
+			then
+				return 0
+			fi
+		fi
+		if [[ $cached_valid == 0 ]] || ! cache-is-fresh "$cache_file" "$cache_ttl"
 		then
 			if [[ $cours_count_total -gt 1 ]]
 			then
@@ -217,26 +366,40 @@ function get-mal-infos () {
 			else
 				printf "%s\t\t - Downloading data for MAL : %s\n" "$(date +%H:%M:%S)" "$mal_id" | tee -a "$LOG"
 			fi
-			curl -s -o "$SCRIPT_FOLDER/config/data/MAL-$mal_id.json" -w "%{http_code}" "https://malapi.animemap.dev/v4/anime/$mal_id" > "$SCRIPT_FOLDER/config/tmp/jikan-limit-rate.txt"
-			if grep -q -w "429" "$SCRIPT_FOLDER/config/tmp/jikan-limit-rate.txt"
+			status=$(curl -sS -o "$tmp_file" -w "%{http_code}" "https://malapi.animemap.dev/v4/anime/$mal_id") || status=000
+			if [[ "$status" == "429" ]]
 			then
 				printf "%s - Jikan API limit reached watiting 30s" "$(date +%H:%M:%S)" | tee -a "$LOG"
 				sleep 30
-				curl -s -o "$SCRIPT_FOLDER/config/data/MAL-$mal_id.json" -w "%{http_code}" "https://malapi.animemap.dev/v4/anime/$mal_id" > "$SCRIPT_FOLDER/config/tmp/jikan-limit-rate.txt"
-				printf "%s\t\t - Done\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
+				status=$(curl -sS -o "$tmp_file" -w "%{http_code}" "https://malapi.animemap.dev/v4/anime/$mal_id") || status=000
+			fi
+			if [[ "$status" == "200" ]] && jq -e '.data | type == "object"' "$tmp_file" >/dev/null 2>&1
+			then
+				if ! mv "$tmp_file" "$cache_file"
+				then
+					printf "%s - Error saving MAL data for %s\n" "$(date +%H:%M:%S)" "$mal_id" | tee -a "$LOG"
+					exit 1
+				fi
+			elif [[ $cached_valid == 1 ]]
+			then
+				rm -f "$tmp_file"
+				printf "%s - MAL refresh failed, retaining cached data for MAL : %s\n" "$(date +%H:%M:%S)" "$mal_id" | tee -a "$LOG"
+			else
+				rm -f "$tmp_file"
+				printf "%s - Error can't download valid MAL data for MAL : %s\n" "$(date +%H:%M:%S)" "$mal_id" | tee -a "$LOG"
+				exit 1
 			fi
 			sleep 1.1
-				printf "%s\t\t - Done\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
+			printf "%s\t\t - Done\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
 		fi
 	fi
 }
 function get-romaji-title () {
 	title="null"
 	title_tmp="null"
-	if awk -F"\t" '{print $2}' "$SCRIPT_FOLDER/config/$OVERRIDE" | grep -q -w "$anilist_id"
+	if tsv-has-value "$SCRIPT_FOLDER/config/$OVERRIDE" 2 "$anilist_id"
 	then
-		line=$(awk -F"\t" '{print $2}' "$SCRIPT_FOLDER/config/$OVERRIDE" | grep -w -n "$anilist_id" | cut -d : -f 1)
-		title_tmp=$(sed -n "${line}p" "$SCRIPT_FOLDER/config/$OVERRIDE" | awk -F"\t" '{print $3}')
+		title_tmp=$(tsv-get-field "$SCRIPT_FOLDER/config/$OVERRIDE" 2 "$anilist_id" 3)
 		if [[ -z "$title_tmp" ]]
 		then
 			title=$(jq '.data.Media.title.romaji' -r "$SCRIPT_FOLDER/config/data/anilist-$anilist_id.json")
@@ -256,10 +419,9 @@ function get-romaji-title () {
 function get-english-title () {
 	title="null"
 	title_tmp="null"
-	if awk -F"\t" '{print $2}' "$SCRIPT_FOLDER/config/$OVERRIDE" | grep -q -w "$anilist_id"
+	if tsv-has-value "$SCRIPT_FOLDER/config/$OVERRIDE" 2 "$anilist_id"
 	then
-		line=$(awk -F"\t" '{print $2}' "$SCRIPT_FOLDER/config/$OVERRIDE" | grep -w -n "$anilist_id" | cut -d : -f 1)
-		title_tmp=$(sed -n "${line}p" "$SCRIPT_FOLDER/config/$OVERRIDE" | awk -F"\t" '{print $3}')
+		title_tmp=$(tsv-get-field "$SCRIPT_FOLDER/config/$OVERRIDE" 2 "$anilist_id" 3)
 		if [[ -z "$title_tmp" ]]
 		then
 			title=$(jq '.data.Media.title.english' -r "$SCRIPT_FOLDER/config/data/anilist-$anilist_id.json")
@@ -347,10 +509,9 @@ function get-mal-tags () {
 	fi
 }
 function get-studios() {
-	if awk -F"\t" '{print $2}' "$SCRIPT_FOLDER/config/$OVERRIDE" | grep -q -w "$anilist_id"
+	if tsv-has-value "$SCRIPT_FOLDER/config/$OVERRIDE" 2 "$anilist_id"
 	then
-		line=$(awk -F"\t" '{print $2}' "$SCRIPT_FOLDER/config/$OVERRIDE" | grep -w -n "$anilist_id" | cut -d : -f 1)
-		studio=$(sed -n "${line}p" "$SCRIPT_FOLDER/config/$OVERRIDE" | awk -F"\t" '{print $4}')
+		studio=$(tsv-get-field "$SCRIPT_FOLDER/config/$OVERRIDE" 2 "$anilist_id" 4)
 		if [[ -z "$studio" ]]
 		then
 			studio=$(jq '.data.Media.studios.edges[].node | select( .isAnimationStudio == true ) | .name' -r "$SCRIPT_FOLDER/config/data/anilist-$anilist_id.json" | head -n 1)
@@ -394,13 +555,13 @@ function get-animes-award () {
 	cr_awards=""
 	if [[ $ANIME_AWARDS_NO_FVA == "Yes" ]]
 	then
-		award_check=$(jq --arg anilist_id "$anilist_id" '.[] | select( .anilist_id == $anilist_id ) | select(.cr_award | contains("English") or contains("Arabic") or contains("Spanish") or contains("Castilian") or contains("French")or contains("German") or contains("Italian") or contains("Portuguese") or contains("Russian")  | not) | "AA " + .year + " " + .cr_award' -r "$SCRIPT_FOLDER/config/tmp/cr-award.json" | paste -s -d, -)  > /dev/null
+		award_check=$(jq --arg anilist_id "$anilist_id" '.[] | select( .anilist_id == $anilist_id ) | select(.cr_award | contains("English") or contains("Arabic") or contains("Spanish") or contains("Castilian") or contains("French")or contains("German") or contains("Italian") or contains("Portuguese") or contains("Russian")  | not) | "AA " + .year + " " + .cr_award' -r "$SCRIPT_FOLDER/config/data/cr-award.json" | paste -s -d, -)  > /dev/null
 		if [[ -n $award_check ]]
 		then
 			cr_awards=$award_check
 		fi
 	else
-		award_check=$(jq --arg anilist_id "$anilist_id" '.[] | select( .anilist_id == $anilist_id ) | "AA " + .year + " " + .cr_award' -r "$SCRIPT_FOLDER/config/tmp/cr-award.json" | paste -s -d, -)  > /dev/null
+		award_check=$(jq --arg anilist_id "$anilist_id" '.[] | select( .anilist_id == $anilist_id ) | "AA " + .year + " " + .cr_award' -r "$SCRIPT_FOLDER/config/data/cr-award.json" | paste -s -d, -)  > /dev/null
 		if [[ -n $award_check ]]
 		then
 			cr_awards=$award_check
@@ -795,12 +956,12 @@ function check-rating-2-valid () {
 function get-season-infos () {
 	override_id=""
 	anilist_backup_id=$anilist_id
-	season_check=$(jq --arg anilist_id "$anilist_id" '.[] | select( .anilist_id == $anilist_id ) | .tvdb_season' -r "$SCRIPT_FOLDER/config/tmp/list-animes-id.json")
+	season_check=$(awk -F '\t' -v key="$anilist_id" '$1 == key { print $3 }' "$SCRIPT_FOLDER/config/tmp/anime-mapping.tsv")
 	first_season=$(echo "$seasons_list" | awk -F "," '{print $1}')
 	last_season=$(echo "$seasons_list" | awk -F "," '{print $NF}')
 	total_seasons=$(echo "$seasons_list" | awk -F "," '{print NF}')
-	valid_anilist_id=$(jq --arg tvdb_id "$tvdb_id" '.[] | select( .tvdb_id == $tvdb_id ) | .anilist_id' -r "$SCRIPT_FOLDER/config/tmp/list-animes-id.json")
-	if awk -F"\t" '{print $2}' "$SCRIPT_FOLDER/config/$OVERRIDE" | grep -q -w "$anilist_backup_id" && [[ $last_season -eq 1 ]]
+	valid_anilist_id=$(awk -F '\t' -v key="$tvdb_id" '$2 == key { print $1 }' "$SCRIPT_FOLDER/config/tmp/anime-mapping.tsv")
+	if tsv-has-value "$SCRIPT_FOLDER/config/$OVERRIDE" 2 "$anilist_backup_id" && [[ $last_season -eq 1 ]]
 	then
 		valid_anilist_id=1
 		override_id=$anilist_backup_id
@@ -830,7 +991,7 @@ function get-season-infos () {
 				printf "      0:\n        label.remove: Score\n" >> "$METADATA"
 			else
 				season_loop=1
-				anilist_ids=$(jq --arg tvdb_id "$tvdb_id" --arg season_number "$season_number" '[.[] | select( .tvdb_id == $tvdb_id ) | select( .tvdb_season == $season_number )] | sort_by(.tvdb_epoffset) | .[].anilist_id' -r "$SCRIPT_FOLDER/config/tmp/list-animes-id.json" | paste -s -d, -)
+				anilist_ids=$(awk -F '\t' -v tvdb="$tvdb_id" -v season="$season_number" '$2 == tvdb && $3 == season { print $4 "\t" $1 }' "$SCRIPT_FOLDER/config/tmp/anime-mapping.tsv" | sort -s -t $'\t' -k1,1 | cut -f2 | paste -s -d, -)
 				if [ -n "$override_id" ] && [[ $season_number -eq 1 ]]
 				then
 					anilist_ids=$anilist_backup_id
@@ -937,7 +1098,7 @@ function get-season-infos () {
 					fi
 				fi
 				cours_count_total=0
-				anilist_id=$(jq --arg tvdb_id "$tvdb_id" --arg season_number "$season_number" '.[] | select( .tvdb_id == $tvdb_id ) | select( .tvdb_season == $season_number ) | select( .tvdb_epoffset == "0" ) | .anilist_id' -r "$SCRIPT_FOLDER/config/tmp/list-animes-id.json" | head -n 1)
+				anilist_id=$(awk -F '\t' -v tvdb="$tvdb_id" -v season="$season_number" '$2 == tvdb && $3 == season && $4 == "0" { print $1; exit }' "$SCRIPT_FOLDER/config/tmp/anime-mapping.tsv")
 				if [ -n "$override_id" ] && [[ $season_number -eq 1 ]]
 				then
 					anilist_id=$anilist_backup_id 
@@ -1243,7 +1404,7 @@ function write-metadata () {
 	if [[ $media_type == "animes" ]]
 	then
 		printf "%s\t\t - Writing airing status\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
-		if awk -F"\t" '{print "\""$1"\":"}' "$SCRIPT_FOLDER/config/data/ongoing.tsv" | grep -q -w "$tvdb_id"
+		if tsv-has-value "$SCRIPT_FOLDER/config/data/ongoing.tsv" 1 "$tvdb_id"
 		then
 			label_add="Airing"
 			label_remove="Planned,Ended"
@@ -1291,7 +1452,7 @@ function write-metadata () {
 		do
 			if [[ $media_type == "animes" ]]
 			then
-				all_anilist_ids=$(jq --arg tvdb_id "$tvdb_id" '.[] | select( .tvdb_id == $tvdb_id ) | .anilist_id' -r "$SCRIPT_FOLDER/config/tmp/list-animes-id.json" | paste -s -d, - | sed 's/,/\\|/g')
+				all_anilist_ids=$(awk -F '\t' -v key="$tvdb_id" '$2 == key { print $1 }' "$SCRIPT_FOLDER/config/tmp/anime-mapping.tsv" | paste -s -d, - | sed 's/,/\\|/g')
 			else
 				all_anilist_ids=$anilist_id
 			fi

@@ -264,7 +264,7 @@ function anilist-fetch-batch () {
 	while [[ $attempt -lt 3 ]]
 	do
 		((attempt++))
-		status=$(curl -sS -o "$response" -D "$headers" -w "%{http_code}" 'https://graphql.anilist.co/' -X POST -H 'content-type: application/json' --data @"$request") || status=000
+		status=$(curl -sS --connect-timeout 10 --max-time 60 -o "$response" -D "$headers" -w "%{http_code}" 'https://graphql.anilist.co/' -X POST -H 'content-type: application/json' --data @"$request") || status=000
 		if [[ "$status" == "200" ]] && jq -e '.data.Page.media | type == "array"' "$response" >/dev/null 2>&1
 		then
 			break
@@ -443,18 +443,19 @@ function mal-fetch-one () {
 	while [[ $attempt -lt 3 ]]
 	do
 		((attempt++))
-		status=$(curl -sS -o "$tmp_file" -w "%{http_code}" "https://malapi.animemap.dev/v4/anime/$mal_id") || status=000
+		status=$(curl -sS --connect-timeout 10 --max-time 30 -o "$tmp_file" -w "%{http_code}" "https://malapi.animemap.dev/v4/anime/$mal_id") || status=000
 		if [[ "$status" == "200" ]] && jq -e '.data | type == "object"' "$tmp_file" >/dev/null 2>&1
 		then
 			mv "$tmp_file" "$cache_file"
 			sleep "${MAL_WORKER_DELAY:-2}"
 			return 0
 		fi
+		printf "%s\t - MAL %s attempt %s/3 failed (HTTP %s)\n" "$(date +%H:%M:%S)" "$mal_id" "$attempt" "$status" >> "$LOG"
 		if [[ "$status" == "429" ]]
 		then
 			sleep 30
 		else
-			sleep "${MAL_WORKER_DELAY:-2}"
+			sleep $((attempt * 5))
 		fi
 	done
 	rm -f "$tmp_file"
@@ -490,7 +491,7 @@ function prefetch-mal-infos () {
 	sort -nu "$pending" -o "$pending"
 	printf "%s\t - %s MAL ids to download with %s workers\n" "$(date +%H:%M:%S)" "$(wc -l < "$pending")" "$workers" | tee -a "$LOG"
 	export -f mal-fetch-one
-	export SCRIPT_FOLDER MAL_WORKER_DELAY
+	export SCRIPT_FOLDER LOG MAL_WORKER_DELAY
 	xargs -a "$pending" -P "$workers" -n 1 bash -c 'mal-fetch-one "$1"' _
 	rm -f "$pending"
 	printf "%s - Done\n\n" "$(date +%H:%M:%S)" | tee -a "$LOG"

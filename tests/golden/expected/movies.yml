@@ -1,0 +1,65 @@
+# Romaji-Renamer v0.0.0-golden
+metadata:
+  tt0000001:
+    title: |-
+      Movie One
+    sort_title: |-
+      Movie One
+    original_title: |-
+      映画1
+    genre.sync: Anime,Drama,Romance,Love Triangle
+    studio: Movie Studio
+    audience_rating: 8.1
+    critic_rating: 8.1
+    label: AA Winner
+  tt0000002:
+    title: |-
+      Movie Custom Title
+    sort_title: |-
+      Movie Custom Title
+    original_title: |-
+      映画2
+    genre.sync: Anime,Action
+    studio: Movie Custom Studio
+    audience_rating: 7.6
+    critic_rating: 7.6
+  tt0000003:
+    title: |-
+      Akira
+    sort_title: |-
+      Akira
+    original_title: |-
+      Akira
+    genre.sync: Anime,Sci-Fi
+    studio: Studio Alpha
+  tt0000004:
+    title: |-
+      No MAL Movie
+    sort_title: |-
+      No MAL Movie
+    original_title: |-
+      映画4
+    genre.sync: Anime,
+    studio: Prod Only
+    audience_rating: 7.9
+    critic_rating: 7.9
+  tt0000005:
+    title: |-
+      Movie Override Plain
+    sort_title: |-
+      Movie Override Plain
+    original_title: |-
+      映画5
+    genre.sync: Anime,Action
+    studio: Studio Alpha
+    audience_rating: 6.6
+    critic_rating: 6.4
+  tt0000006:
+    title: |-
+      Movie Planned
+    sort_title: |-
+      Movie Planned
+    original_title: |-
+      映画6
+    genre.sync: Anime,Fantasy
+    studio: Studio Alpha

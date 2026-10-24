@@ -1,0 +1,4 @@
+#!/bin/bash
+# Offline guard: sleeping only happens in network retry/rate-limit paths. Log it and return at once.
+printf 'sleep %s\n' "$*" >> "${GOLDEN_NET_LOG:-/dev/stderr}"
+exit 0

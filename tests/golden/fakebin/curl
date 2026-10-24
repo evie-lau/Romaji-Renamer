@@ -1,0 +1,4 @@
+#!/bin/bash
+# Offline guard: record the invocation and fail. Any entry in the log means a network code path was hit.
+printf 'curl %s\n' "$*" >> "${GOLDEN_NET_LOG:-/dev/stderr}"
+exit 1

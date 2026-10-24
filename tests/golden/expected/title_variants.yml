@@ -1,0 +1,356 @@
+# Romaji-Renamer v0.0.0-golden
+metadata:
+  1001:
+    title: |-
+      Tanjun na Single
+    sort_title: |-
+      Simple Single
+    original_title: |-
+      Simple Single
+    genre.sync: Anime,Action,Comedy,Male Protagonist,Parody,Super Power
+    studio: Animation Studio X
+    seasons:
+      1:
+        label: AA Winner
+        label.remove: Score
+    audience_rating: 7.8
+    critic_rating: 7.8
+    label: AA Winner,Ended
+    label.remove: Planned,Airing
+  1002:
+    title: |-
+      Multi Season
+    sort_title: |-
+      Multi Season
+    original_title: |-
+      Multi Season
+    genre.sync: Anime,Drama
+    studio: Studio Alpha
+    seasons:
+      0:
+        label.remove: Score
+      1:
+        label: Score
+        user_rating: 8.2
+      2:
+        label: Score
+        user_rating: 0
+      3:
+        label: Score,AA Winner
+        user_rating: 9.1
+    audience_rating: 8.6
+    critic_rating: 8.2
+    label: AA Winner,Planned
+    label.remove: Airing,Ended
+  1003:
+    title: |-
+      Cour Show
+    sort_title: |-
+      Cour Show
+    original_title: |-
+      Cour Show
+    genre.sync: Anime,Action
+    studio: Studio Alpha
+    seasons:
+      1:
+        label: Score
+        user_rating: 7.4
+      2:
+        label: Score
+        user_rating: 8.0
+      3:
+        label: Score
+        user_rating: 6.6
+    audience_rating: 7.3
+    critic_rating: 7.3
+    label: Planned
+    label.remove: Airing,Ended
+  1004:
+    title: |-
+      Ongoing Show
+    sort_title: |-
+      Ongoing Show
+    original_title: |-
+      Ongoing Show
+    genre.sync: Anime,Fantasy,Adventure,Magic,Isekai
+    studio: Studio Alpha
+    seasons:
+      1:
+        label: Score
+        label.remove: Score
+    audience_rating: 6.9
+    critic_rating: 6.9
+    label: Airing
+    label.remove: Planned,Ended
+  1005:
+    title: |-
+      86 EIGHTY-SIX
+    sort_title: |-
+      86 EIGHTY-SIX
+    original_title: |-
+      86 EIGHTY-SIX
+    genre.sync: Anime,Action,Drama,Sci-Fi,Military,War,Mecha
+    studio: A-1 Pictures
+    seasons:
+      1:
+        label: Score,AA Winner
+        user_rating: 8.5
+      2:
+        label: Score
+        user_rating: 8.3
+    audience_rating: 8.4
+    critic_rating: 8.4
+    label: AA Winner,Ended
+    label.remove: Planned,Airing
+  1006:
+    title: |-
+      Branchy
+    sort_title: |-
+      Branchy
+    original_title: |-
+      Branchy
+    genre.sync: Anime,Action
+    studio: Studio Alpha
+    seasons:
+      1:
+        label: Score
+        label.remove: Score
+    audience_rating: 7.3
+    critic_rating: 7.3
+    label: Ended
+    label.remove: Planned,Airing
+  1007:
+    title: |-
+      Future Show
+    sort_title: |-
+      Future Show
+    original_title: |-
+      Future Show
+    genre.sync: Anime,Fantasy
+    studio: Studio Alpha
+    seasons:
+      1:
+        label: Score
+        label.remove: Score
+    label: Planned
+    label.remove: Airing,Ended
+  1008:
+    title: |-
+      CUSTOM TITLE: Override!
+    sort_title: |-
+      CUSTOM TITLE: Override!
+    original_title: |-
+      CUSTOM TITLE: Override!
+    genre.sync: Anime,Action
+    studio: Custom Studio
+    audience_rating: 8.0
+    critic_rating: 8.1
+    label: Ended
+    label.remove: Planned,Airing
+  1009:
+    title: |-
+      Override Plain
+    sort_title: |-
+      Override Plain EN
+    original_title: |-
+      Override Plain EN
+    genre.sync: Anime,Action
+    studio: Studio Alpha
+    seasons:
+      1:
+        label: Score
+        label.remove: Score
+    audience_rating: 7.4
+    critic_rating: 7.4
+    label: Airing
+    label.remove: Planned,Ended
+  1010:
+    title: |-
+      Override Title Only
+    sort_title: |-
+      Override Title Only
+    original_title: |-
+      Override Title Only
+    genre.sync: Anime,Action
+    studio: Studio Alpha
+    seasons:
+      1:
+        label: Score
+        user_rating: 7.7
+      2:
+        label: Score
+        user_rating: 7.9
+    audience_rating: 7.8
+    critic_rating: 7.8
+    label: Ended
+    label.remove: Planned,Airing
+  1011:
+    title: |-
+      Minimal Titles
+    sort_title: |-
+      Minimal Titles
+    original_title: |-
+      Minimal Titles
+    genre.sync: Anime,
+    audience_rating: 5.5
+    critic_rating: 5.5
+    label: Ended
+    label.remove: Planned,Airing
+  1012:
+    title: |-
+      No Mapping
+    sort_title: |-
+      No Mapping
+    original_title: |-
+      No Mapping
+    genre.sync: Anime,Horror,Gore
+    studio: Studio Alpha
+    audience_rating: 6.4
+    critic_rating: 6.4
+    label: Ended
+    label.remove: Planned,Airing
+  1013:
+    title: |-
+      Cycle A
+    sort_title: |-
+      Cycle A
+    original_title: |-
+      Cycle A
+    genre.sync: Anime,Action
+    studio: Studio Alpha
+    seasons:
+      1:
+        label: Score
+        label.remove: Score
+    audience_rating: 6.1
+    critic_rating: 6.1
+    label: Ended
+    label.remove: Planned,Airing
+  1014:
+    title: |-
+      Year Null Both
+    sort_title: |-
+      Year Null Both
+    original_title: |-
+      Year Null Both
+    genre.sync: Anime,Action
+    studio: Studio Alpha
+    seasons:
+      1:
+        label: Score
+        label.remove: Score
+    audience_rating: 7.0
+    critic_rating: 7.0
+    label: Ended
+    label.remove: Planned,Airing
+  1015:
+    title: |-
+      Year Only
+    sort_title: |-
+      Year Only
+    original_title: |-
+      Year Only
+    genre.sync: Anime,Action
+    studio: Studio Alpha
+    seasons:
+      1:
+        label: Score
+        label.remove: Score
+    audience_rating: 7.0
+    critic_rating: 7.0
+    label: Ended
+    label.remove: Planned,Airing
+  1016:
+    title: |-
+      Month Null
+    sort_title: |-
+      Month Null
+    original_title: |-
+      Month Null
+    genre.sync: Anime,Action
+    studio: Studio Alpha
+    seasons:
+      1:
+        label: Score
+        label.remove: Score
+    audience_rating: 7.0
+    critic_rating: 7.0
+    label: Ended
+    label.remove: Planned,Airing
+  1017:
+    title: |-
+      Months 1
+    sort_title: |-
+      Months 1
+    original_title: |-
+      Months 1
+    genre.sync: Anime,Action
+    studio: Studio Alpha
+    seasons:
+      1:
+        label: Score
+        user_rating: 6.2
+      2:
+        label: Score
+        user_rating: 6.7
+      3:
+        label: Score
+        user_rating: 7.1
+    audience_rating: 6.7
+    critic_rating: 6.7
+    label: Ended
+    label.remove: Planned,Airing
+  1018:
+    title: |-
+      Konosuba! 100% \ "q" it's: ok
+    sort_title: |-
+      Special: Chars % \ ' "
+    original_title: |-
+      Special: Chars % \ ' "
+    genre.sync: Anime,Comedy,Fantasy,Isekai
+    studio: Studio, With Comma
+    seasons:
+      1:
+        label: Score
+        user_rating: 8.8
+      2:
+        label: Score
+        user_rating: 8.7
+    audience_rating: 8.8
+    critic_rating: 8.8
+    label: Ended
+    label.remove: Planned,Airing
+  1019:
+    title: |-
+      POKÉMON
+    sort_title: |-
+      POKÉMON
+    original_title: |-
+      POKÉMON
+    genre.sync: Anime,Action
+    studio: Studio Alpha
+    seasons:
+      1:
+        label: Score
+        label.remove: Score
+    audience_rating: 7.2
+    critic_rating: 7.2
+    label: Ended
+    label.remove: Planned,Airing
+  1020:
+    title: |-
+      Second Only
+    sort_title: |-
+      Second Only
+    original_title: |-
+      Second Only
+    genre.sync: Anime,Action
+    studio: Studio Alpha
+    seasons:
+      2:
+        label: Score
+        user_rating: 9.0
+    audience_rating: 9.0
+    critic_rating: 9.0
+    label: Ended
+    label.remove: Planned,Airing

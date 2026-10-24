@@ -1,0 +1,71 @@
+# Romaji-Renamer v0.0.0-golden
+metadata:
+  tt0000001:
+    title: |-
+      Movie One EN
+    sort_title: |-
+      Movie One EN
+    original_title: |-
+      映画1
+    genre.sync: Anime,Drama,Romance,School
+    studio: Movie Studio
+    audience_rating: 8.1
+    critic_rating: 8.1
+    label: AA Winner,Completed
+    label.remove: Watching,Dropped,Paused,Planning
+  tt0000002:
+    title: |-
+      Movie Custom Title
+    sort_title: |-
+      Movie Custom Title
+    original_title: |-
+      映画2
+    genre.sync: Anime,Adventure
+    studio: Movie Custom Studio
+    audience_rating: 7.6
+    critic_rating: 7.6
+    label.remove: Completed,Watching,Dropped,Paused,Planning
+  tt0000003:
+    title: |-
+      Akira
+    sort_title: |-
+      Akira
+    original_title: |-
+      Akira
+    genre.sync: Anime,Sci-Fi
+    studio: Studio Alpha
+    label.remove: Completed,Watching,Dropped,Paused,Planning
+  tt0000004:
+    title: |-
+      No MAL Movie
+    sort_title: |-
+      No MAL Movie
+    original_title: |-
+      映画4
+    genre.sync: Anime,Sci-Fi
+    studio: Prod Only
+    critic_rating: 7.9
+    label.remove: Completed,Watching,Dropped,Paused,Planning
+  tt0000005:
+    title: |-
+      Movie Override Plain EN
+    sort_title: |-
+      Movie Override Plain EN
+    original_title: |-
+      映画5
+    genre.sync: Anime,Comedy,Kids
+    studio: Studio Alpha
+    audience_rating: 6.4
+    critic_rating: 6.6
+    label: Planning
+    label.remove: Completed,Dropped,Paused,
+  tt0000006:
+    title: |-
+      Movie Planned EN
+    sort_title: |-
+      Movie Planned EN
+    original_title: |-
+      映画6
+    genre.sync: Anime,Fantasy
+    studio: Studio Alpha
+    label.remove: Completed,Watching,Dropped,Paused,Planning

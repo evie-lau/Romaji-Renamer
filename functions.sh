@@ -307,13 +307,21 @@ function prefetch-anilist-infos () {
 	local batch_size=50
 	local id
 	local fd
+	local pass=0
+	local max_passes=50
+	local failed=0
 	local -a chunk
+	local -a frontier
+	local -a files
+	local -A seen
 
 	printf "%s - Prefetching Anilist data\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
 	: > "$pending"
 	while read -r id
 	do
 		[[ "$id" =~ ^[0-9]+$ ]] || continue
+		seen[$id]=1
+		frontier+=("$id")
 		anilist-cache-is-fresh "$id" || printf '%s\n' "$id" >> "$pending"
 	done < <(collect-anilist-ids "$media_kind" | sort -nu)
 	printf "%s\t - %s ids to download\n" "$(date +%H:%M:%S)" "$(wc -l < "$pending")" | tee -a "$LOG"
@@ -323,10 +331,47 @@ function prefetch-anilist-infos () {
 		if ! anilist-fetch-batch "${chunk[@]}"
 		then
 			printf "%s\t - Batch failed, remaining ids will be downloaded one by one\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
+			failed=1
 			break
 		fi
 	done
 	exec {fd}<&-
+	# only animes walk sequel chains (get-airing-status), so prefetch those targets too
+	while [[ "$media_kind" == "animes" ]] && [[ $failed -eq 0 ]] && [[ $pass -lt $max_passes ]] && [[ ${#frontier[@]} -gt 0 ]]
+	do
+		((pass++))
+		files=()
+		for id in "${frontier[@]}"
+		do
+			[[ -f "$SCRIPT_FOLDER/config/data/anilist-$id.json" ]] && files+=("$SCRIPT_FOLDER/config/data/anilist-$id.json")
+		done
+		frontier=()
+		: > "$pending"
+		if [[ ${#files[@]} -gt 0 ]]
+		then
+			while read -r id
+			do
+				[[ "$id" =~ ^[0-9]+$ ]] || continue
+				[[ -n "${seen[$id]}" ]] && continue
+				seen[$id]=1
+				frontier+=("$id")
+				anilist-cache-is-fresh "$id" || printf '%s\n' "$id" >> "$pending"
+			done < <(printf '%s\0' "${files[@]}" | xargs -0 jq -r '.data.Media.relations.edges[]? | select(.relationType == "SEQUEL") | .node | select(.format == "TV" or .format == "ONA" or .format == "MOVIE" or .format == "OVA" or .format == null) | .id // empty' 2>/dev/null | sort -nu)
+		fi
+		[[ ${#frontier[@]} -gt 0 ]] || break
+		printf "%s\t - Sequel pass %s: %s new ids, %s to download\n" "$(date +%H:%M:%S)" "$pass" "${#frontier[@]}" "$(wc -l < "$pending")" | tee -a "$LOG"
+		exec {fd}< "$pending"
+		while mapfile -t -n "$batch_size" -u "$fd" chunk && [[ ${#chunk[@]} -gt 0 ]]
+		do
+			if ! anilist-fetch-batch "${chunk[@]}"
+			then
+				printf "%s\t - Batch failed, remaining ids will be downloaded one by one\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
+				failed=1
+				break
+			fi
+		done
+		exec {fd}<&-
+	done
 	rm -f "$pending"
 	printf "%s - Done\n\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
 }
@@ -619,19 +664,10 @@ function less-caps-title () {
 	fi
 }
 function get-score () {
-	anime_score=0
 	anime_score=$(jq '.data.Media.averageScore' -r "$SCRIPT_FOLDER/config/data/anilist-$anilist_id.json")
 	if [[ "$anime_score" == "null" ]] || [[ "$anime_score" == "" ]]
 	then
-		rm "$SCRIPT_FOLDER/config/data/anilist-$anilist_id.json"
-		get-anilist-infos
-		anime_score=$(jq '.data.Media.averageScore' -r "$SCRIPT_FOLDER/config/data/anilist-$anilist_id.json")
-		if [[ "$anime_score" == "null" ]] || [[ "$anime_score" == "" ]]
-		then
-			anime_score=0
-		else
-			anime_score=$(printf %s "$anime_score" | awk '{print $1 / 10}')
-		fi
+		anime_score=0
 	else
 		anime_score=$(printf %s "$anime_score" | awk '{print $1 / 10}')
 	fi
@@ -649,13 +685,7 @@ else
 	anime_score=$(jq '.data.score' -r "$SCRIPT_FOLDER/config/data/MAL-$mal_id.json")
 	if [[ "$anime_score" == "null" ]] || [[ "$anime_score" == "" ]]
 	then
-		rm "$SCRIPT_FOLDER/config/data/MAL-$mal_id.json"
-		get-mal-infos
-		anime_score=$(jq '.data.score' -r "$SCRIPT_FOLDER/config/data/MAL-$mal_id.json")
-		if [[ "$anime_score" == "null" ]] || [[ "$anime_score" == "" ]]
-		then
-			anime_score=0
-		fi
+		anime_score=0
 	fi
 fi
 }

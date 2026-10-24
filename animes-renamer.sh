@@ -2,7 +2,9 @@
 
 SCRIPT_FOLDER=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 media_type="animes"
+set -a
 source "$SCRIPT_FOLDER/config/.env"
+set +a
 source "$SCRIPT_FOLDER/VERSION"
 source "$SCRIPT_FOLDER/functions.sh"
 METADATA=$METADATA_ANIMES
@@ -177,17 +179,13 @@ printf "%s\t - Done\n" "$(date +%H:%M:%S)"
 printf "%s - Done\n\n" "$(date +%H:%M:%S)"
 
 # write PMM metadata file from ID/animes.tsv and jikan API
-printf "%s - Start writing the metadata file \n" "$(date +%H:%M:%S)" | tee -a "$LOG"
-printf "# Romaji-Renamer v%s\n" "$version" > "$METADATA"
-printf "metadata:\n" >> "$METADATA"
-tvdb_id=""
-anilist_id=""
-mal_id=""
-while IFS=$'\t' read -r tvdb_id anilist_id plex_title asset_name seasons_list override_seasons_ignore
-do
-	printf "%s\t - Writing metadata for %s / tvdb : %s / Anilist : %s \n" "$(date +%H:%M:%S)" "$plex_title" "$tvdb_id" "$anilist_id" | tee -a "$LOG"
-	write-metadata
-	printf "%s\t - Done\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
-done < "$SCRIPT_FOLDER/config/ID/animes.tsv"
+# write the PMM metadata file (python write stage, settings come from the exported config/.env)
+python3 "$SCRIPT_FOLDER/tools/write_metadata.py" --script-folder "$SCRIPT_FOLDER" --media animes --output "$METADATA"
+write_status=$?
+if [[ $write_status -ne 0 ]]
+then
+	printf "%s - Error writing the metadata file (exit %s)\n" "$(date +%H:%M:%S)" "$write_status" | tee -a "$LOG"
+	exit "$write_status"
+fi
 printf "%s - Run finished\n\n\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
 exit 0

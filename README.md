@@ -208,7 +208,14 @@ CACHE_TIME_UPCOMING=1
 MAL_WORKERS=3
 # Seconds each MAL worker waits after a request
 MAL_WORKER_DELAY=2
+# Reuse the YAML of unchanged shows between runs (Yes/No), see "Write stage" in the README
+FRAGMENT_CACHE=Yes
 ```
+
+### Write stage (Python)
+The final step that writes the Kometa metadata file is now `tools/write_metadata.py` (Python 3, standard library only). It gives the same YAML as the previous bash loop; `animes-renamer.sh` / `movies-renamer.sh` call it with the settings of `config/.env` exported.
+
+`FRAGMENT_CACHE` (default `Yes`, set `No` to disable) stores the YAML of each show in `config/tmp/fragments/` and reuses it while nothing that affects it changed: the settings, the show's lines in the ID/override/mapping files, ongoing/userlist/award membership, the AniList/MAL cache files it used (content and age) and the script itself. Posters are still checked on every run. The few values bash leaked from the previous show (e.g. a show without MAL ID keeping the previous score/tags) are part of the key, so such shows are cached too but are rebuilt when the previous show changes. Delete `config/tmp/fragments/` to force a full rebuild.
 
 ### Step 4 - Configure Kometa 
   - Within your (Kometa) config.yml add the following metadata_path, it should look like this with the default filepath:

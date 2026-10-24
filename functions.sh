@@ -227,6 +227,109 @@ function get-mal-id () {
 function get-tvdb-id () {
 	awk -F '\t' -v key="$anilist_id" '$1 == key { print $2 }' "$SCRIPT_FOLDER/config/tmp/anilist-tvdb.tsv"
 }
+function anilist-cache-is-fresh () {
+	local file="$SCRIPT_FOLDER/config/data/anilist-$1.json"
+	local status
+	local ttl
+
+	status=$(jq -er '.data.Media | select(type == "object") | .status | strings | select(length > 0)' "$file" 2>/dev/null) || return 1
+	ttl=$(cache-time-for-status "$status") || return 1
+	cache-is-fresh "$file" "$ttl"
+}
+function collect-anilist-ids () {
+	if [[ -s "$SCRIPT_FOLDER/config/ID/animes.tsv" ]] && [[ -s "$SCRIPT_FOLDER/config/tmp/anime-mapping.tsv" ]] && [[ "$1" == "animes" ]]
+	then
+		# main entries plus every mapped cour of the tvdb shows in the library
+		awk -F '\t' 'NR == FNR { tvdb[$1]; print $2; next } $2 in tvdb { print $1 }' "$SCRIPT_FOLDER/config/ID/animes.tsv" "$SCRIPT_FOLDER/config/tmp/anime-mapping.tsv"
+	elif [[ "$1" == "movies" ]]
+	then
+		awk -F '\t' '{ print $3 }' "$SCRIPT_FOLDER/config/ID/movies.tsv"
+	fi
+}
+# Fetch one batch of AniList ids and write each result as a per-id cache file
+function anilist-fetch-batch () {
+	local query='query($ids: [Int], $perPage: Int) { Page(perPage: $perPage) { media(type: ANIME, id_in: $ids) { id relations { edges { relationType node { id type format title { romaji } status } } } title { romaji(stylised: false) english(stylised: false) native(stylised: false) } averageScore genres tags { name rank } studios { edges { node { name isAnimationStudio } } } startDate { year month } season seasonYear coverImage { extraLarge } status idMal } } }'
+	local request="$SCRIPT_FOLDER/config/tmp/anilist-batch-request.json"
+	local response="$SCRIPT_FOLDER/config/tmp/anilist-batch-response.json"
+	local headers="$SCRIPT_FOLDER/config/tmp/anilist-limit-rate.txt"
+	local attempt=0
+	local status
+	local delay
+	local remaining
+	local id
+	local json
+	local saved=0
+
+	jq -n --arg query "$query" --argjson ids "$(printf '%s\n' "$@" | jq -Rn '[inputs | tonumber]')" --argjson count "$#" '{query: $query, variables: {ids: $ids, perPage: $count}}' > "$request"
+	while [[ $attempt -lt 3 ]]
+	do
+		((attempt++))
+		status=$(curl -sS -o "$response" -D "$headers" -w "%{http_code}" 'https://graphql.anilist.co/' -X POST -H 'content-type: application/json' --data @"$request") || status=000
+		if [[ "$status" == "200" ]] && jq -e '.data.Page.media | type == "array"' "$response" >/dev/null 2>&1
+		then
+			break
+		fi
+		delay=$(grep -ioP '(?<=retry-after: )[0-9]+' "$headers" 2>/dev/null | head -n 1)
+		[[ "$status" == "429" ]] || delay=10
+		printf "%s\t - AniList batch request failed (HTTP %s), retrying in %ss\n" "$(date +%H:%M:%S)" "$status" "${delay:-60}" | tee -a "$LOG"
+		sleep "${delay:-60}"
+	done
+	if [[ "$status" != "200" ]] || ! jq -e '.data.Page.media | type == "array"' "$response" >/dev/null 2>&1
+	then
+		rm -f "$request" "$response"
+		return 1
+	fi
+	while IFS=$'\t' read -r id json
+	do
+		printf '%s\n' "$json" > "$SCRIPT_FOLDER/config/data/anilist-$id.json.tmp"
+		if jq -e '.data.Media | type == "object" and (.status | type == "string")' "$SCRIPT_FOLDER/config/data/anilist-$id.json.tmp" >/dev/null 2>&1
+		then
+			mv "$SCRIPT_FOLDER/config/data/anilist-$id.json.tmp" "$SCRIPT_FOLDER/config/data/anilist-$id.json"
+			((saved++))
+		else
+			rm -f "$SCRIPT_FOLDER/config/data/anilist-$id.json.tmp"
+		fi
+	done < <(jq -r '.data.Page.media[] | "\(.id)\t\({data: {Media: .}} | tojson)"' "$response")
+	printf "%s\t - Cached %s of %s requested ids\n" "$(date +%H:%M:%S)" "$saved" "$#" | tee -a "$LOG"
+	remaining=$(grep -ioP '(?<=x-ratelimit-remaining: )[0-9]+' "$headers" 2>/dev/null | head -n 1)
+	rm -f "$request" "$response"
+	if [[ -n "$remaining" ]] && [[ $remaining -lt 3 ]]
+	then
+		printf "%s\t - Anilist API limit nearly reached waiting 30s\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
+		sleep 30
+	fi
+	return 0
+}
+# Warm the AniList cache with batched requests; ids that are missed fall back to get-anilist-infos
+function prefetch-anilist-infos () {
+	local media_kind="$1"
+	local pending="$SCRIPT_FOLDER/config/tmp/anilist-prefetch-ids.txt"
+	local batch_size=50
+	local id
+	local fd
+	local -a chunk
+
+	printf "%s - Prefetching Anilist data\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
+	: > "$pending"
+	while read -r id
+	do
+		[[ "$id" =~ ^[0-9]+$ ]] || continue
+		anilist-cache-is-fresh "$id" || printf '%s\n' "$id" >> "$pending"
+	done < <(collect-anilist-ids "$media_kind" | sort -nu)
+	printf "%s\t - %s ids to download\n" "$(date +%H:%M:%S)" "$(wc -l < "$pending")" | tee -a "$LOG"
+	exec {fd}< "$pending"
+	while mapfile -t -n "$batch_size" -u "$fd" chunk && [[ ${#chunk[@]} -gt 0 ]]
+	do
+		if ! anilist-fetch-batch "${chunk[@]}"
+		then
+			printf "%s\t - Batch failed, remaining ids will be downloaded one by one\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
+			break
+		fi
+	done
+	exec {fd}<&-
+	rm -f "$pending"
+	printf "%s - Done\n\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
+}
 function get-anilist-infos () {
 	local cache_file="$SCRIPT_FOLDER/config/data/anilist-$anilist_id.json"
 	local tmp_file="$cache_file.tmp"
@@ -329,6 +432,68 @@ function get-anilist-infos () {
 			fi
 		done
 	fi
+}
+function mal-fetch-one () {
+	local mal_id="$1"
+	local cache_file="$SCRIPT_FOLDER/config/data/MAL-$mal_id.json"
+	local tmp_file="$cache_file.$$.tmp"
+	local attempt=0
+	local status
+
+	while [[ $attempt -lt 3 ]]
+	do
+		((attempt++))
+		status=$(curl -sS -o "$tmp_file" -w "%{http_code}" "https://malapi.animemap.dev/v4/anime/$mal_id") || status=000
+		if [[ "$status" == "200" ]] && jq -e '.data | type == "object"' "$tmp_file" >/dev/null 2>&1
+		then
+			mv "$tmp_file" "$cache_file"
+			sleep "${MAL_WORKER_DELAY:-2}"
+			return 0
+		fi
+		if [[ "$status" == "429" ]]
+		then
+			sleep 30
+		else
+			sleep "${MAL_WORKER_DELAY:-2}"
+		fi
+	done
+	rm -f "$tmp_file"
+	return 0
+}
+# Warm the MAL cache with a small worker pool; misses fall back to get-mal-infos
+function prefetch-mal-infos () {
+	local media_kind="$1"
+	local pending="$SCRIPT_FOLDER/config/tmp/mal-prefetch-ids.txt"
+	local workers="${MAL_WORKERS:-3}"
+	local id
+	local status
+	local ttl
+	local mal
+
+	[[ "$workers" =~ ^[0-9]+$ ]] && [[ $workers -ge 1 ]] || workers=3
+	printf "%s - Prefetching MAL data\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
+	: > "$pending"
+	while read -r id
+	do
+		[[ "$id" =~ ^[0-9]+$ ]] || continue
+		IFS=$'\t' read -r status mal < <(jq -r '.data.Media | select(type == "object") | [.status, (.idMal // "")] | @tsv' "$SCRIPT_FOLDER/config/data/anilist-$id.json" 2>/dev/null)
+		[[ -n "$status" ]] || continue
+		[[ -n "$mal" ]] || mal=$(awk -F '\t' -v key="$id" '$1 == key { print $2; exit }' "$SCRIPT_FOLDER/config/tmp/anilist-mal.tsv")
+		[[ "$mal" =~ ^[0-9]+$ ]] || continue
+		ttl=$(cache-time-for-status "$status") || continue
+		if [[ -s "$SCRIPT_FOLDER/config/data/MAL-$mal.json" ]] && jq -e '.data | type == "object"' "$SCRIPT_FOLDER/config/data/MAL-$mal.json" >/dev/null 2>&1 && cache-is-fresh "$SCRIPT_FOLDER/config/data/MAL-$mal.json" "$ttl"
+		then
+			continue
+		fi
+		printf '%s\n' "$mal" >> "$pending"
+	done < <(collect-anilist-ids "$media_kind" | sort -nu)
+	sort -nu "$pending" -o "$pending"
+	printf "%s\t - %s MAL ids to download with %s workers\n" "$(date +%H:%M:%S)" "$(wc -l < "$pending")" "$workers" | tee -a "$LOG"
+	export -f mal-fetch-one
+	export SCRIPT_FOLDER MAL_WORKER_DELAY
+	xargs -a "$pending" -P "$workers" -n 1 bash -c 'mal-fetch-one "$1"' _
+	rm -f "$pending"
+	printf "%s - Done\n\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
 }
 function get-mal-infos () {
 	mal_id=""

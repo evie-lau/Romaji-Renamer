@@ -99,6 +99,9 @@ done < "$SCRIPT_FOLDER/config/tmp/plex_animes_export.tsv"
 printf "%s\t - Done\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
 printf "%s - Done\n\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
 
+prefetch-anilist-infos animes
+prefetch-mal-infos animes
+
 # Create an ongoing list at $SCRIPT_FOLDER/config/data/ongoing.csv
 printf "%s - Creating Anilist airing list\n" "$(date +%H:%M:%S)"
 :> "$SCRIPT_FOLDER/config/data/ongoing.tsv"

@@ -93,6 +93,9 @@ done < "$SCRIPT_FOLDER/config/tmp/plex_movies_export.tsv"
 printf "%s\t - Done\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
 printf "%s - Done\n\n" "$(date +%H:%M:%S)" | tee -a "$LOG"
 
+prefetch-anilist-infos movies
+prefetch-mal-infos movies
+
 # write PMM metadata file from ID/movies.tsv and jikan API
 printf "%s - Start writing the metadata file \n" "$(date +%H:%M:%S)" | tee -a "$LOG"
 printf "# Romaji-Renamer v%s\n" "$version" > "$METADATA"

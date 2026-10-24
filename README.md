@@ -203,7 +203,11 @@ CACHE_TIME_FINISHED=90
 # Cache releasing/hiatus series data for this many days
 CACHE_TIME_AIRING=1
 # Cache not-yet-released series data for this many days
-CACHE_TIME_UPCOMING=3
+CACHE_TIME_UPCOMING=1
+# Number of parallel MAL downloads during the prefetch (1 disables parallelism)
+MAL_WORKERS=3
+# Seconds each MAL worker waits after a request
+MAL_WORKER_DELAY=2
 ```
 
 ### Step 4 - Configure Kometa 
